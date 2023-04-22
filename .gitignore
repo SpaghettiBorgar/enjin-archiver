@@ -1,0 +1,4 @@
+*.prof
+*.lprof
+prof.out
+__pycache__
