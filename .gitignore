@@ -2,3 +2,4 @@
 *.lprof
 prof.out
 __pycache__
+*.db
