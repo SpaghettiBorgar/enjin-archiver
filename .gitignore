@@ -3,3 +3,5 @@
 prof.out
 __pycache__
 *.db
+pages/
+assets/
