@@ -9,8 +9,6 @@ from dateutil.parser import parse as _parsedate, ParserError
 from datetime import datetime
 import config
 
-# response = requests.get()
-
 Base = declarative_base()
 
 
@@ -83,6 +81,9 @@ class User(Base):
 	last_activity = Column(Integer)
 	avatar = Column(String)
 	cover_image = Column(String)
+	emeralds = Column(Integer)
+	tag = Column(String)
+	registeredid = Column(Integer)
 
 
 class Community(Base):
@@ -119,7 +120,8 @@ session = Session()
 
 
 def asset(url):
-	return url  # TODO download assets
+	fetcher.save_asset(url)
+	return url
 
 
 def parse_forum_page(soup):
@@ -188,14 +190,21 @@ def next_page_url(soup):
 def process_thread(url, id_):
 	soup = fetcher.fetch_soup(url)
 	container = soup.select_one(".forum-content .block-container")
-	# skip first row on following pages, if it's the recurring thread-starting post
-	for tr in container.find_all(name="tr", class_="row")[container.find(class_="new-post-marker") != None:]:
+	first = True
+
+	for tr in container.find_all(name="tr", class_="row"):
 		post = ForumPost(id_=tr['post_id'],
 		                 thread=id_,
 		                 author=tr.td['data-userid'],
 		                 posted=parsedate(tr.find(class_="posted").next.string, fuzzy=True),
 		                 edited=parsedate(tr.find(class_="posted").span.text, fuzzy=True),
 		                 content=str(tr.find(class_="post-wrapper")))  # TODO download attachments
+		# skip first row on following pages, if it's the recurring thread-starting
+		if first and session.query(ForumPost).filter_by(id_=post.id_).scalar() is not None:
+			first = False
+			continue
+		first = False
+
 		session.add(post)
 		if vote_type_lookup == {}:
 			populate_vote_types(tr)
@@ -205,6 +214,21 @@ def process_thread(url, id_):
 				    PostVote(post=post.id_,
 				             user=user.a['data-minitooltip-userid'],
 				             type=vote_type_lookup[vote.find(class_="vote_name").string.strip()]))
+
+		hover = tr.find(class_="avatar-hover-trigger")
+		if session.query(User).filter_by(id_=hover['data-userid']).scalar() is None:
+			try:
+				emeralds = int(tr.find(class_="website-points").find(class_="right").text.replace(',', ''))
+			except:
+				emeralds = None
+			user = User(id_=hover['data-userid'],
+			            name=hover['data-username'],
+			            registeredid=hover['data-registeredid'],
+			            joined=parsedate(hover['data-date']),
+			            emeralds=emeralds,
+			            tag=str(tr.find(class_="element_username").span))
+			session.add(user)
+
 	next = next_page_url(soup)
 	if next:
 		process_thread(next, id_)
@@ -272,8 +296,11 @@ def process_user(url):
 
 task_queue = []
 
-# parse_forum_page(fetcher.fetch_soup("/forum"))
-process_user_id(4368993)
+for link in fetcher.fetch_soup("/forum").find_all("link"):
+	fetcher.save_asset(link['href'])
+
+parse_forum_page(fetcher.fetch_soup("/forum"))
+# process_user_id(4368993)
 
 while len(task_queue) > 0:
 	task = task_queue[0]
